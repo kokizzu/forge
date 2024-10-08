@@ -11,12 +11,29 @@ import (
 	"github.com/frantjc/forge/internal/hooks"
 )
 
-var NoUseForgeSock bool
+var NoForgeSock bool
+
+type SleepingShimContainer struct {
+	forge.Container
+}
+
+func (c *SleepingShimContainer) Exec(ctx context.Context, cc *forge.ContainerConfig, s *forge.Streams) (int, error) {
+	ccc := new(forge.ContainerConfig)
+	*ccc = *cc
+
+	if NoForgeSock {
+		ccc.Entrypoint = append([]string{bin.ShimPath, "exec", "--"}, ccc.Entrypoint...)
+	} else {
+		ccc.Entrypoint = append([]string{bin.ShimPath, "exec", fmt.Sprintf("--sock=%s", containerfs.ForgeSock), "--"}, ccc.Entrypoint...)
+	}
+
+	return c.Container.Exec(ctx, ccc, s)
+}
 
 func CreateSleepingContainer(ctx context.Context, containerRuntime forge.ContainerRuntime, image forge.Image, containerConfig *forge.ContainerConfig) (forge.Container, error) {
 	entrypoint := []string{bin.ShimPath, "sleep"}
 
-	if !NoUseForgeSock {
+	if !NoForgeSock {
 		entrypoint = append(entrypoint,
 			fmt.Sprintf("--sock=%s", containerfs.ForgeSock),
 		)
@@ -30,11 +47,12 @@ func CreateSleepingContainer(ctx context.Context, containerRuntime forge.Contain
 		}
 	}
 
-	container, err := containerRuntime.CreateContainer(ctx, image, &forge.ContainerConfig{
-		Entrypoint: entrypoint,
-		Mounts:     containerConfig.Mounts,
-		Env:        containerConfig.Env,
-	})
+	ccc := new(forge.ContainerConfig)
+	*ccc = *containerConfig
+	ccc.Entrypoint = entrypoint
+	ccc.Cmd = nil
+
+	container, err := containerRuntime.CreateContainer(ctx, image, ccc)
 	if err != nil {
 		return nil, err
 	}
@@ -51,5 +69,5 @@ func CreateSleepingContainer(ctx context.Context, containerRuntime forge.Contain
 
 	hooks.ContainerStarted.Dispatch(ctx, container)
 
-	return container, nil
+	return &SleepingShimContainer{container}, nil
 }

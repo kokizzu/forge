@@ -3,7 +3,7 @@ package docker
 import (
 	"context"
 	"io"
-	"strings"
+	"path/filepath"
 
 	"github.com/docker/cli/cli/command/image/build"
 	"github.com/docker/docker/api/types"
@@ -15,11 +15,13 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
 )
 
-func (d *ContainerRuntime) BuildDockerfile(ctx context.Context, dir, reference string) (forge.Image, error) {
-	ref, err := name.ParseReference(strings.NewReplacer(".", "").Replace(reference))
+func (d *ContainerRuntime) BuildDockerfile(ctx context.Context, dockerfile, reference string) (forge.Image, error) {
+	ref, err := name.ParseReference(reference)
 	if err != nil {
 		return nil, err
 	}
+
+	dir := filepath.Dir(dockerfile)
 
 	excludes, err := build.ReadDockerignore(dir)
 	if err != nil {
@@ -40,6 +42,7 @@ func (d *ContainerRuntime) BuildDockerfile(ctx context.Context, dir, reference s
 
 	ibr, err := d.Client.ImageBuild(ctx, buildCtx, types.ImageBuildOptions{
 		Tags:       []string{ref.Name()},
+		Dockerfile: filepath.Base(dockerfile),
 		PullParent: true,
 		Remove:     true,
 	})
